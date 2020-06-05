@@ -27,7 +27,7 @@ defmodule Robotxt do
 
   @user_agent_regex Regex.compile!("user-agent:\s", "ui")
   @comments_regex Regex.compile!("#.+\n?")
-  @valid_fields ~w(Disallow: Allow: Sitemap:)
+  @valid_fields ~w(disallow: allow: sitemap:)
 
   @doc """
   Returns a list of `%Robotxt{}`.
@@ -35,6 +35,9 @@ defmodule Robotxt do
   ## Example
 
       iex> Robotxt.parse("User-agent: *\\nDisallow:\\n")
+      [%Robotxt{user_agent: "*", allow: [], disallow: [], sitemap: nil}]
+
+      iex> Robotxt.parse("User-agent: *\\ndisallow:\\n")
       [%Robotxt{user_agent: "*", allow: [], disallow: [], sitemap: nil}]
 
   """
@@ -67,7 +70,7 @@ defmodule Robotxt do
 
   defp transform(tuple) when is_tuple(tuple) do
     key = elem(tuple, 0)
-    values = elem(tuple, 1)
+    values = elem(tuple, 1) |> Enum.map_every(2, &String.downcase(&1))
     transform(values, %Robotxt{user_agent: key})
   end
 
@@ -76,18 +79,20 @@ defmodule Robotxt do
     transform(tail, new_state)
   end
 
+  defp transform([_field, _value | tail], %Robotxt{} = state), do: transform(tail, state)
+
   defp transform([_], %Robotxt{} = state), do: state
   defp transform([], %Robotxt{} = state), do: state
 
   defp update_state(field, value, %Robotxt{disallow: disallow, allow: allow} = state) do
     case field do
-      "Disallow:" ->
+      "disallow:" ->
         %Robotxt{state | disallow: [value | disallow]}
 
-      "Allow:" ->
+      "allow:" ->
         %Robotxt{state | allow: [value | allow]}
 
-      "Sitemap:" ->
+      "sitemap:" ->
         %Robotxt{state | sitemap: value}
     end
   end
