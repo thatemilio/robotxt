@@ -73,6 +73,7 @@ defmodule Robotxt do
   #
 
   defp transform({user_agent, values}) do
+    user_agent = String.trim(user_agent)
     values =
       values
       |> Stream.map(&String.split(&1, @split_regex))
