@@ -9,7 +9,7 @@ defmodule Robotxt do
   ```
   defp deps do
     [
-      {:robotxt, "~> 0.1.0"},
+      {:robotxt, "~> 0.1.2"},
     ]
   end
   ```
@@ -27,7 +27,7 @@ defmodule Robotxt do
 
   @user_agent_regex Regex.compile!("user-agent:\s", "ui")
   @comments_regex Regex.compile!("#.+\n?")
-  @valid_fields ~w(disallow: allow: sitemap:)
+  @split_regex Regex.compile!(":\s")
 
   @doc """
   Returns a list of `%Robotxt{}`.
@@ -45,7 +45,7 @@ defmodule Robotxt do
   def parse(body) when is_binary(body) do
     Regex.replace(@comments_regex, body, "")
     |> String.split(@user_agent_regex, trim: true)
-    |> Stream.map(&String.split/1)
+    |> Stream.map(&String.split(&1, "\n", trim: true))
     |> Stream.map(&List.pop_at(&1, 0))
     |> Stream.map(&transform/1)
     |> Enum.to_list()
@@ -68,32 +68,42 @@ defmodule Robotxt do
     Enum.filter(list, &(&1.user_agent == user_agent)) |> List.first()
   end
 
-  defp transform(tuple) when is_tuple(tuple) do
-    key = elem(tuple, 0)
-    values = elem(tuple, 1) |> Enum.map_every(2, &String.downcase(&1))
-    transform(values, %Robotxt{user_agent: key})
+  #
+  ## Helper functions
+  #
+
+  defp transform({user_agent, values}) do
+    values =
+      values
+      |> Stream.map(&String.split(&1, @split_regex))
+      |> Enum.map(&downcase/1)
+    transform(values, %Robotxt{user_agent: user_agent})
   end
 
-  defp transform([field, value | tail], %Robotxt{} = state) when field in @valid_fields do
-    new_state = update_state(field, value, state)
+  defp transform([[field, value] | tail], %Robotxt{} = state) do
+    new_state = update_state([field, value], state)
     transform(tail, new_state)
   end
 
-  defp transform([_field, _value | tail], %Robotxt{} = state), do: transform(tail, state)
-
-  defp transform([_], %Robotxt{} = state), do: state
+  defp transform([[_]], %Robotxt{} = state), do: state
   defp transform([], %Robotxt{} = state), do: state
 
-  defp update_state(field, value, %Robotxt{disallow: disallow, allow: allow} = state) do
+  defp downcase([field, value]), do: [String.downcase(field), value]
+  defp downcase([field]), do: [String.downcase(field)]
+
+  defp update_state([field, value], %Robotxt{disallow: disallow, allow: allow} = state) do
     case field do
-      "disallow:" ->
+      "disallow" ->
         %Robotxt{state | disallow: [value | disallow]}
 
-      "allow:" ->
+      "allow" ->
         %Robotxt{state | allow: [value | allow]}
 
-      "sitemap:" ->
+      "sitemap" ->
         %Robotxt{state | sitemap: value}
+
+      _ -> 
+        state
     end
   end
 end

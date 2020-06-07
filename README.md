@@ -7,7 +7,7 @@ Robots.txt parser.
 ```elixir
 def deps do
   [
-    {:robotxt, "~> 0.1.0"}
+    {:robotxt, "~> 0.1.2"}
   ]
 end
 ```
