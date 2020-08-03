@@ -9,7 +9,7 @@ defmodule Robotxt do
   ```
   defp deps do
     [
-      {:robotxt, "~> 0.1.2"},
+      {:robotxt, "~> 0.1.3"},
     ]
   end
   ```
@@ -25,30 +25,26 @@ defmodule Robotxt do
     sitemap: nil | binary
   }
 
-  @user_agent_regex Regex.compile!("user-agent:\s", "ui")
-  @comments_regex Regex.compile!("#.+\n?")
-  @split_regex Regex.compile!(":\s")
-
   @doc """
   Returns a list of `%Robotxt{}`.
 
   ## Example
 
       iex> Robotxt.parse("User-agent: *\\nDisallow:\\n")
-      [%Robotxt{user_agent: "*", allow: [], disallow: [], sitemap: nil}]
+      [%Robotxt{user_agent: "*", allow: [], disallow: [""], sitemap: nil}]
 
-      iex> Robotxt.parse("User-agent: *\\ndisallow:\\n")
-      [%Robotxt{user_agent: "*", allow: [], disallow: [], sitemap: nil}]
+      iex> Robotxt.parse("user-agent: *\\ndisallow:\\n")
+      [%Robotxt{user_agent: "*", allow: [], disallow: [""], sitemap: nil}]
 
   """
   @spec parse(binary) :: list(%Robotxt{})
   def parse(body) when is_binary(body) do
-    Regex.replace(@comments_regex, body, "")
-    |> String.split(@user_agent_regex, trim: true)
-    |> Stream.map(&String.split(&1, "\n", trim: true))
-    |> Stream.map(&List.pop_at(&1, 0))
-    |> Stream.map(&transform/1)
+    String.split(body, "\n", trim: true)
+    |> Stream.reject(&String.starts_with?(&1, "#"))
+    |> Stream.map(&String.split(&1, ":", parts: 2))
+    |> Stream.map(fn [k, v] -> [String.downcase(k), String.trim(v)] end)
     |> Enum.to_list()
+    |> transform()
   end
 
   @doc """
@@ -72,39 +68,41 @@ defmodule Robotxt do
   ## Helper functions
   #
 
-  defp transform({user_agent, values}) do
-    user_agent = String.trim(user_agent)
-    values =
-      values
-      |> Stream.map(&String.split(&1, @split_regex))
-      |> Enum.map(&downcase/1)
-    transform(values, %Robotxt{user_agent: user_agent})
+  defp transform(data) when is_list(data), do: transform(data, %Robotxt{}, [])
+  defp transform([], %Robotxt{} = txt, state) when is_list(state), do: [txt | state]
+  defp transform([[k, v] | tail], %Robotxt{} = txt, state) when is_list(state) do
+    cond do
+      k == "user-agent" and txt.user_agent == nil ->
+        new_txt =
+          update_robotxt(k, v, txt)
+        transform(tail, new_txt, state)
+      k == "user-agent" and txt.user_agent != nil ->
+        new_txt =
+          update_robotxt(k, v, %Robotxt{})
+        transform(tail, new_txt, [txt | state])
+      true ->
+        new_txt =
+          update_robotxt(k, v, txt)
+        transform(tail, new_txt, state)
+    end
   end
 
-  defp transform([[field, value] | tail], %Robotxt{} = state) do
-    new_state = update_state([field, value], state)
-    transform(tail, new_state)
-  end
+  defp update_robotxt(key, value, %Robotxt{disallow: disallow, allow: allow} = txt) do
+    case key do
+      "user-agent" ->
+        %Robotxt{txt | user_agent: value}
 
-  defp transform([[_]], %Robotxt{} = state), do: state
-  defp transform([], %Robotxt{} = state), do: state
-
-  defp downcase([field, value]), do: [String.downcase(field), value]
-  defp downcase([field]), do: [String.downcase(field)]
-
-  defp update_state([field, value], %Robotxt{disallow: disallow, allow: allow} = state) do
-    case field do
       "disallow" ->
-        %Robotxt{state | disallow: [value | disallow]}
+        %Robotxt{txt | disallow: [value | disallow]}
 
       "allow" ->
-        %Robotxt{state | allow: [value | allow]}
+        %Robotxt{txt | allow: [value | allow]}
 
       "sitemap" ->
-        %Robotxt{state | sitemap: value}
+        %Robotxt{txt | sitemap: value}
 
       _ -> 
-        state
+        txt
     end
   end
 end
